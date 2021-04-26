@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 import pyaudio
 import socket
-import sys
-import socketserver
+
+print('this is receiver')
 
 # Pyaudio Initialization
-chunk = 1024
+chunk_size = 1024
 pa = pyaudio.PyAudio()
 
 # Opening of the audio stream
@@ -17,20 +17,19 @@ stream = pa.open(format = 8,
 # Socket Initialization
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)     # For using same port again
-s.bind((socket.gethostname(), 52137))
-size = 1024
+s.bind((socket.gethostname(), 51237))
 s.listen(5)
 client, address = s.accept()
 
-
-print('Server Running...')
-while 1:
-    data = client.recv(size)
+print('Host connected to Raspberry server...')
+while True:
+    data = client.recv(chunk_size)  # Receive one chunk of binary data
     if data:
-        stream.write(data)  # Stream the recieved audio data
-        client.send(b'ACK')  # Send back Acknowledgement, has to be in binary form
+        stream.write(data)  # Play the received audio data
+        print(data[:30])    # Print the beginning of the batch
+        client.send(b'ACK') # Send back Acknowledgement, has to be in binary form
 
 client.close()
 stream.close()
 pa.terminate()
-print("Server has stopped running")
+print("Connection with Raspberry server has been lost")
