@@ -10,8 +10,8 @@ from types import SimpleNamespace
 chunk_size = 1024
 pa = pyaudio.PyAudio()
 data = None
-serv_IP = 'localhost'
-my_IP = '192.168.0.150'  # for now, please manually specify your IP address in local network
+serv_IP = '10.0.2.15'
+my_IP = '10.0.2.15'  # for now, please manually specify your IP address in local network
 serv_comm_port = 61237
 serv_audio_port = None
 streaming_event = threading.Event()

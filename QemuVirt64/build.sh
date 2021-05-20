@@ -20,6 +20,9 @@ cd package
 rm -Rf python-pyaudio
 rm -Rf portaudio
 cd ../../
+for i in wifitalkie/* ; do
+   cp -r $i overlay/usr/bin
+done
 cp -R portaudio ${BR_NAME}/package
 cp -R python-pyaudio ${BR_NAME}/package
 cp BR_config ${BR_NAME}/.config
