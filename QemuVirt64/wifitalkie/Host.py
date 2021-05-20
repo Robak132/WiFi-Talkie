@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import pyaudio
 import socket
-import tkinter  # for GUI, will be deleted on Raspberry version
+
 import threading
 # for communicating with server
 import selectors
@@ -10,8 +10,8 @@ from types import SimpleNamespace
 chunk_size = 1024
 pa = pyaudio.PyAudio()
 data = None
-serv_IP = '192.168.1.14'
-my_IP = '192.168.1.14'  # for now, please manually specify your IP address in local network
+serv_IP = 'localhost'
+my_IP = '192.168.0.150'  # for now, please manually specify your IP address in local network
 serv_comm_port = 61237
 serv_audio_port = None
 streaming_event = threading.Event()
@@ -131,66 +131,5 @@ communication = Communication()
 communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=communication.launch, daemon=True)
 communication_thread.start()
 
-
-
-# Nadawca
-# GUI do symulacji
-class VOIP_FRAME(tkinter.Frame):
-    def OnMouseDown(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
-        self.mute = False
-        self.speakStart()
-
-    def muteSpeak(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
-        self.mute = True
-        print("You are now muted")
-
-    def speakStart(self):
-        t = threading.Thread(target=self.speak)
-        t.start()
-
-    def speak(self):
-        global data  # global variable for passing chunks to sender threads
-        global serv_IP, serv_audio_port
-        communication.send_message('speak')
-        print("You are now speaking")
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # need to wait for serv_audio_port to come, gotta wait for message from server
-        sock.connect((serv_IP, serv_audio_port))
-        while self.mute is False:
-            sock.send(self.stream.read(chunk_size))
-            sock.recv(chunk_size)
-        self.stream.stop_stream()
-        sock.close()
-
-    def createWidgets(self):
-        self.speakb = tkinter.Button(self)
-        self.speakb["text"] = "Speak to server"
-        self.speakb.pack({"side": "left"})
-        self.speakb["state"] = tkinter.DISABLED   # because speaking is not implemented yet
-        #self.speakb.bind("<ButtonPress-1>", self.OnMouseDown)
-        #self.speakb.bind("<ButtonRelease-1>", self.muteSpeak)
-
-    def __init__(self, master=None):
-        self.stream = pa.open(format=pyaudio.paInt16,
-                              channels=1,
-                              rate=48000, # alt. 44100
-                              input=True,
-                              frames_per_buffer=chunk_size)
-        self.mute = True
-        tkinter.Frame.__init__(self, master)
-        self.mouse_pressed = False
-        self.pack()
-        self.createWidgets()
-        self.receiver = threading.Thread(name=f'WiFi-Talkie audio receiver', target=listener_fun, daemon=True)
-        self.receiver.start()
-
-# Speaking not implemented yet
-root = tkinter.Tk()
-root.title("Push to talk")
-app = VOIP_FRAME(master=root)
-app.mainloop()
-try: root.destroy()
-except: pass
-app.stream.close()
-pa.terminate()
-print('End of the program. Receiver daemon will be terminated.')
+while True:
+	pass

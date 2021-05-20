@@ -1,9 +1,6 @@
 import socket
 import pyaudio
-# import tkinter
 import threading
-from tkinter import *
-
 import selectors
 from types import SimpleNamespace
 
@@ -13,8 +10,9 @@ data = None  # chunk do przesłania
 streaming_event = threading.Event()
 audio_senders = []
 
-serv_IP = '192.168.1.14'
+serv_IP = '10.0.2.15'
 serv_comm_port = 61237
+
 
 class Communication:
     def __init__(self):
@@ -77,6 +75,7 @@ class Communication:
                 else:
                     self.service_connection(key, mask)
 
+
 class Speaker:
     def __init__(self):
         self.speaker = None
@@ -129,13 +128,12 @@ class Speaker:
             data = self.get_speaker().read(chunk_size)  # Receive one chunk of binary data
             if data:
                 streaming_event.set()
-                print(data[:30])  # Print the beginning of the batch
+                # print(data[:30])  # Print the beginning of the batch
                 # self.get_speaker().send(b'ACK')  # Send back Acknowledgement, has to be in binary form
 
 
-
 def createStream(is_microphone = False):
-#   Audio Stream (PyAudio) Initialization
+    # Audio Stream (PyAudio) Initialization
     return pyAudio.open(format=pyaudio.paInt16, # pyaudio.paInt24
                    channels=1,
                    rate=48000, # alt. 44100
@@ -143,15 +141,17 @@ def createStream(is_microphone = False):
                    input=is_microphone,
                    frames_per_buffer=chunk_size)
 
+
 def setupStream(client_IP, client_port):
     # Socket Initialization
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('192.168.1.14', 0))  # możliwe że tutaj trzeba będzie client_IP
+    sock.bind(('192.168.0.150', 0))  # możliwe że tutaj trzeba będzie client_IP
     serv_port = sock.getsockname()[1]
     sock.connect_ex((client_IP, client_port))
     audio_senders.append(threading.Thread(name=f'Sender to {client_IP} on port {client_port}', target=sendStream, args=(sock, streaming_event, client_IP, client_port,)))
     audio_senders[-1].start()
     return client_port
+
 
 def sendStream(sock, streaming_event, client_IP, client_port):
     global data
@@ -171,38 +171,20 @@ speaker = Speaker()
 speaker_thread = threading.Thread(target=speaker.speaker_handler, daemon=True)
 speaker_thread.start()
 
-# GUI do symulacji
-class VOIP_FRAME(Frame):
-    def OnMouseDown(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
-        speaker.start_priority_speaking()
+if __name__ == '__main__':
+    communicator = Communication()
+    communicator_thread = threading.Thread(name=f'Communicator thread', target=communicator.launch, daemon=True)
+    communicator_thread.start()
 
-    def muteSpeak(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
-        speaker.stop_priority_speaking()
+    print('this is the Raspberry main server')
+    while True:
+        command = input()
+        if command == 'speak':
+            speaker.start_priority_speaking()
+        elif command == 'stop':
+            speaker.stop_priority_speaking()
+        elif command == 'kill':
+            break
 
-    def createWidgets(self):
-        self.speakb = Button(self)
-        self.speakb["text"] = "Priority speak"
-        self.speakb.pack({"side": "left"})
-        self.speakb.bind("<ButtonPress-1>", self.OnMouseDown)
-        self.speakb.bind("<ButtonRelease-1>", self.muteSpeak)
-
-    def __init__(self, master=None):
-        Frame.__init__(self, master)
-        self.mouse_pressed = False
-        self.pack()
-        self.createWidgets()
-
-communicator = Communication()
-communicator_thread = threading.Thread(name=f'Communicator thread', target=communicator.launch, daemon=True)
-communicator_thread.start()
-
-print('this is the Raspberry main server')
-
-root = Tk()
-app = VOIP_FRAME(master=root)
-app.mainloop()
-try: root.destroy()
-except: pass
-# stream.close()
-for thread in audio_senders:
-    thread.terminate()
+    for thread in audio_senders:
+        thread.terminate()
