@@ -3,21 +3,21 @@ import pyaudio
 import socket
 
 import threading
-# for communicating with server
 import selectors
 from types import SimpleNamespace
 
 chunk_size = 1024
 pa = pyaudio.PyAudio()
 data = None
-serv_IP = '10.0.2.15'
-my_IP = '10.0.2.15'  # for now, please manually specify your IP address in local network
+serv_IP = '192.168.0.150'
+my_IP = '192.168.0.150'  # for now, please manually specify your IP address in local network
 serv_comm_port = 61237
 serv_audio_port = None
 streaming_event = threading.Event()
 
+
 class Communication:
-    def __init__(self, serv_host = serv_IP, serv_port = serv_comm_port):
+    def __init__(self, serv_host=serv_IP, serv_port=serv_comm_port):
         self.serv_IP = serv_host
         self.serv_port = serv_port
         self.sel = selectors.DefaultSelector()
@@ -34,8 +34,8 @@ class Communication:
         self.sock.connect_ex(server_addr)
         events = selectors.EVENT_READ | selectors.EVENT_WRITE
         self.messages = [b'?active']
-        data = SimpleNamespace( messages=list(self.messages),
-                                outb=b'')
+        data = SimpleNamespace(messages=list(self.messages),
+                               outb=b'')
         self.sel.register(self.sock, events, data=data)
 
     def service_connection(self, key, mask):
@@ -80,33 +80,31 @@ class Communication:
         else:
             print("Connection with server hasn't been established yet. Socket doesn't exist yet.", flush=True)
 
-    def send_message(self, message):    # not recommended for use in final product!
+    def send_message(self, message):  # not recommended for use in final product!
         if message == '?active':
             self.messages.append(message.encode('ascii'))
-        elif message.startswith('?join') and  message[6:].isdigit():
+        elif message.startswith('?join') and message[6:].isdigit():
             self.messages.append(message.encode('ascii'))
 
     def launch(self):
         self.connect()
         while True:
-                events = self.sel.select(timeout=None)
-                if events:
-                    for key, mask in events:
-                        self.service_connection(key, mask)
-                # Check for a socket being monitored to continue.
-                if not self.sel.get_map():
-                    break
+            events = self.sel.select(timeout=None)
+            if events:
+                for key, mask in events:
+                    self.service_connection(key, mask)
+            # Check for a socket being monitored to continue.
+            if not self.sel.get_map():
+                break
         print("Communication with Raspberry server has been lost.", flush=True)
         self.sock.close()
 
 
-
-
 def listener_fun():
     print('Listener thread initialized.', flush=True)
-    stream = pa.open(format=pyaudio.paInt16, # pyaudio.paInt24
+    stream = pa.open(format=pyaudio.paInt16,  # pyaudio.paInt24
                      channels=1,
-                     rate=48000, # alt. 44100
+                     rate=48000,  # alt. 44100
                      output=True,
                      frames_per_buffer=chunk_size)
 
@@ -127,9 +125,11 @@ def listener_fun():
             client.send(b'ACK')  # Send back Acknowledgement, has to be in binary form
 
 
-communication = Communication()
-communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=communication.launch, daemon=True)
-communication_thread.start()
+if __name__ == '__main__':
+    communication = Communication()
+    communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=communication.launch,
+                                            daemon=True)
+    communication_thread.start()
 
-while True:
-	pass
+    while True:
+        pass

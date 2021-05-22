@@ -10,13 +10,13 @@ data = None  # chunk do przesłania
 streaming_event = threading.Event()
 audio_senders = []
 
-serv_IP = '10.0.2.15'
+serv_IP = '192.168.0.150'
 serv_comm_port = 61237
 
 
 class Communication:
     def __init__(self):
-        self.host = serv_IP         # Standard loopback interface address (localhost)
+        self.host = serv_IP  # Standard loopback interface address (localhost)
         self.port = serv_comm_port  # Port to listen on (non-privileged ports are > 1023)
         self.sel = selectors.DefaultSelector()
 
@@ -132,14 +132,14 @@ class Speaker:
                 # self.get_speaker().send(b'ACK')  # Send back Acknowledgement, has to be in binary form
 
 
-def createStream(is_microphone = False):
+def createStream(is_microphone=False):
     # Audio Stream (PyAudio) Initialization
-    return pyAudio.open(format=pyaudio.paInt16, # pyaudio.paInt24
-                   channels=1,
-                   rate=48000, # alt. 44100
-                   output=not is_microphone,
-                   input=is_microphone,
-                   frames_per_buffer=chunk_size)
+    return pyAudio.open(format=pyaudio.paInt16,  # pyaudio.paInt24
+                        channels=1,
+                        rate=48000,  # alt. 44100
+                        output=not is_microphone,
+                        input=is_microphone,
+                        frames_per_buffer=chunk_size)
 
 
 def setupStream(client_IP, client_port):
@@ -148,7 +148,8 @@ def setupStream(client_IP, client_port):
     sock.bind(('192.168.0.150', 0))  # możliwe że tutaj trzeba będzie client_IP
     serv_port = sock.getsockname()[1]
     sock.connect_ex((client_IP, client_port))
-    audio_senders.append(threading.Thread(name=f'Sender to {client_IP} on port {client_port}', target=sendStream, args=(sock, streaming_event, client_IP, client_port,)))
+    audio_senders.append(threading.Thread(name=f'Sender to {client_IP} on port {client_port}', target=sendStream,
+                                          args=(sock, streaming_event, client_IP, client_port,)))
     audio_senders[-1].start()
     return client_port
 
@@ -167,11 +168,11 @@ def sendStream(sock, streaming_event, client_IP, client_port):
     sock.close()
 
 
-speaker = Speaker()
-speaker_thread = threading.Thread(target=speaker.speaker_handler, daemon=True)
-speaker_thread.start()
-
 if __name__ == '__main__':
+    speaker = Speaker()
+    speaker_thread = threading.Thread(target=speaker.speaker_handler, daemon=True)
+    speaker_thread.start()
+
     communicator = Communication()
     communicator_thread = threading.Thread(name=f'Communicator thread', target=communicator.launch, daemon=True)
     communicator_thread.start()
