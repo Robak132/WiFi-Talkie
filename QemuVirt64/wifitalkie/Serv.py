@@ -1,6 +1,7 @@
 import socket
 import pyaudio
 import threading
+from tkinter import *
 import selectors
 from types import SimpleNamespace
 
@@ -8,9 +9,10 @@ pyAudio = pyaudio.PyAudio()
 chunk_size = 1024
 data = None  # chunk do przesłania
 streaming_event = threading.Event()
-audio_senders = []
+audio_streamers = {}
+audio_streamers_terminators = {}
 
-serv_IP = '192.168.0.150'
+serv_IP = socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
 
 
@@ -38,19 +40,27 @@ class Communication:
                 print(f'received message {message}', flush=True)
                 if message[0] == '?':
                     if message[1:5] == 'join' and message[6:].isdigit():
-                        new_speaker_port = setupStream(data.addr[0], int(message[6:]))
+                        new_speaker_port = setup_stream(data.addr[0], int(message[6:]))
                         data.outb += f'accept {new_speaker_port}'.encode('ascii')
                     elif message[1:7] == 'active':
                         data.outb += b'active'
                     elif message[1:6] == 'speak':
-                        port = speaker.set_speaker(data.addr[0])
-                        if port:
-                            data.outb += f'speak {port}'.encode('ascii')
+                        receiver_sock = speaker.create_receiver(data.addr[0])
+                        receiver_setup = threading.Thread(name="Waiting for connection from the speaker",
+                                                          target=speaker.setup_audio_receiver, args=(receiver_sock,))
+                        receiver_setup.start()
+                        receiver_port = receiver_sock.getsockname()[1]
+                        if receiver_port:
+                            data.outb += f'speak {receiver_port}'.encode('ascii')
                         else:
-                            data.outb += f'speak reject'.encode('ascii')
+                            data.outb += b'speak rejected'
+                elif message == 'quit':
+                    audio_streamers_terminators[data.addr[0]].set()
+                    print('Terminated thread for sending stream to', data.addr, flush=True)
                 else:
                     data.outb += b'unrecognized command: ' + recv_data
             else:
+                print('closing connection to', data.addr, flush=True)
                 self.sel.unregister(sock)
                 sock.close()
         if mask & selectors.EVENT_WRITE:
@@ -89,51 +99,80 @@ class Speaker:
             return self.speaker
 
     def start_priority_speaking(self):
-        self.priority_speaker = createStream(is_microphone=True)
+        self.priority_speaker = create_stream(is_microphone=True)
         print('Priority speaker created', flush=True)
         self.are_we_streaming.set()
 
     def stop_priority_speaking(self):
-        self.priority_speaker.close()
-        self.priority_speaker = None
         if not self.speaker:
             self.are_we_streaming.clear()
+        self.priority_speaker.close()
+        self.priority_speaker = None
         print('Priority speaking ended', flush=True)
 
     def remove_speaker(self):
-        self.speaker.close()
-        self.speaker = None
         if not self.priority_speaker:
             self.are_we_streaming.clear()
+        self.speaker.close()
+        self.speaker = None
         print('Speaker removed', flush=True)
 
-    def set_speaker(self, speaker_IP):
-        if self.is_speaker_free() is not True: return False
+    def create_receiver(self, speaker_IP):
+        if self.priority_speaker is not None: return self.priority_speaker
+        if self.speaker is not None: return self.speaker
         # Socket Initialization
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # For using same port again
-        sock.bind((speaker_IP, 0))
-        yield sock.getsockname()[1]
-        sock.listen(5)
-        client, address = sock.accept()
-        self.speaker = client
-        self.speaker.read = self.speaker.recv
-        self.are_we_streaming.set()
-        print(f'Ready for receiving datastream from client at {client_IP}', flush=True)
+        sock.bind((serv_IP, 0))
+        return sock
 
-    def speaker_handler(self):
+        # Mamy sock.bind, które ustaliło port na przyjmowanie transmisji, więc teraz trzeba napisać do hosta z portem
+        # i jednocześnie stworzyć wątek do obsługi klienta kiedy zacznie nadawać
+
+    def setup_audio_receiver(self, sock):
+        sock.listen(5)
+        self.speaker, address = sock.accept()
+        print(f'Ready for receiving datastream from client at {address}', flush=True)
+        self.are_we_streaming.set()
+
+    def audio_forwarder(self):
         global data
         print('Speaker handler thread initialized', flush=True)
-        while self.are_we_streaming.wait():
-            data = self.get_speaker().read(chunk_size)  # Receive one chunk of binary data
-            if data:
-                streaming_event.set()
-                # print(data[:30])  # Print the beginning of the batch
-                # self.get_speaker().send(b'ACK')  # Send back Acknowledgement, has to be in binary form
+        while True:
+            self.are_we_streaming.wait()
+            try:
+                speaker = self.get_speaker()
+                if isinstance(speaker, socket.socket):
+                    data = speaker.recv(chunk_size)  # Receive one chunk of binary data
+                else:
+                    data = speaker.read(chunk_size)  # Read binary data from audio stream (server mic)
+
+                if data:
+                    streaming_event.set()
+                    print(data[:30])  # Print the beginning of the batch
+                    if isinstance(speaker, socket.socket):
+                        self.get_speaker().send(b'ACK')  # Send back Acknowledgement, has to be in binary form
+                else:
+                    print('A może tak?', flush=True)
+            except ConnectionResetError:
+                self.are_we_streaming.clear()
+                print('Connection has been ended by the host. Closing receiver socket.', flush=True)
+                speaker = self.get_speaker()
+                if isinstance(speaker, socket.socket):
+                    self.speaker.close()
+                    self.speaker = None
+                    print('self.speaker closed', flush=True)
+                else:
+                    self.priority_speaker.close()  # priority speaker - nie wiem czy to jest dobrze
+                    self.priority_speaker = None
+                continue
+            # except Exception as ex:
+            #     print('Dosłownie każdy inny exception niż ConnectionResetError. Jeśli to się pojawia to trzeba zacząć się martwić.\n', ex, flush=True)
+            #     continue
 
 
-def createStream(is_microphone=False):
-    # Audio Stream (PyAudio) Initialization
+def create_stream(is_microphone=False):
+    #   Audio Stream (PyAudio) Initialization
     return pyAudio.open(format=pyaudio.paInt16,  # pyaudio.paInt24
                         channels=1,
                         rate=48000,  # alt. 44100
@@ -142,50 +181,70 @@ def createStream(is_microphone=False):
                         frames_per_buffer=chunk_size)
 
 
-def setupStream(client_IP, client_port):
+def setup_stream(client_IP, client_port):
     # Socket Initialization
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('192.168.0.150', 0))  # możliwe że tutaj trzeba będzie client_IP
-    serv_port = sock.getsockname()[1]
+    sock.bind((serv_IP, 0))  # możliwe że tutaj trzeba będzie client_IP
     sock.connect_ex((client_IP, client_port))
-    audio_senders.append(threading.Thread(name=f'Sender to {client_IP} on port {client_port}', target=sendStream,
-                                          args=(sock, streaming_event, client_IP, client_port,)))
-    audio_senders[-1].start()
-    return client_port
+    audio_streamers_terminators[client_IP] = threading.Event()
+    audio_streamers[client_IP] = threading.Thread(name=f'Sender to {client_IP} on port {client_port}',
+                                                  target=audio_streamer,
+                                                  args=(sock, streaming_event, client_IP, client_port,))
+    audio_streamers[client_IP].start()  # docelowo: audio_senders[(client_IP, client_port)]
+    return sock.getsockname()[1]
 
 
-def sendStream(sock, streaming_event, client_IP, client_port):
+def audio_streamer(sock, streaming_event, client_IP, client_port):
     global data
+    end_condition = audio_streamers_terminators[client_IP]
     print(f'Thread for {client_IP} on port {client_port} configured', flush=True)
-    while True:
+    while not end_condition.isSet():
         streaming_event.wait()
         if data is not None:
             sock.send(data)
             sock.recv(chunk_size)
-        else:
-            break
         streaming_event.clear()
-    sock.close()
 
 
-if __name__ == '__main__':
-    speaker = Speaker()
-    speaker_thread = threading.Thread(target=speaker.speaker_handler, daemon=True)
-    speaker_thread.start()
+speaker = Speaker()
+speaker_thread = threading.Thread(name=f'Audio receiver', target=speaker.audio_forwarder, daemon=True)
+speaker_thread.start()
 
-    communicator = Communication()
-    communicator_thread = threading.Thread(name=f'Communicator thread', target=communicator.launch, daemon=True)
-    communicator_thread.start()
 
-    print('this is the Raspberry main server')
-    while True:
-        command = input()
-        if command == 'speak':
-            speaker.start_priority_speaking()
-        elif command == 'stop':
-            speaker.stop_priority_speaking()
-        elif command == 'kill':
-            break
+# GUI do symulacji
+class VOIP_FRAME(Frame):
+    def OnMouseDown(self, uselessArgument=None):  # Leave uselessArgument there, it prevents some pointless errors
+        speaker.start_priority_speaking()
 
-    for thread in audio_senders:
-        thread.terminate()
+    def muteSpeak(self, uselessArgument=None):  # Leave uselessArgument there, it prevents some pointless errors
+        speaker.stop_priority_speaking()
+
+    def createWidgets(self):
+        self.speakb = Button(self)
+        self.speakb["text"] = "Priority speak"
+        self.speakb.pack({"side": "left"})
+        self.speakb.bind("<ButtonPress-1>", self.OnMouseDown)
+        self.speakb.bind("<ButtonRelease-1>", self.muteSpeak)
+
+    def __init__(self, master=None):
+        Frame.__init__(self, master)
+        self.mouse_pressed = False
+        self.pack()
+        self.createWidgets()
+
+
+communicator = Communication()
+communicator_thread = threading.Thread(name=f'Communicator thread', target=communicator.launch, daemon=True)
+communicator_thread.start()
+
+print('this is the Raspberry main server')
+
+root = Tk()
+app = VOIP_FRAME(master=root)
+app.mainloop()
+try:
+    root.destroy()
+except:
+    pass
+for event in audio_streamers_terminators.values():
+    event.set()
