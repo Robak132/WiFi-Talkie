@@ -3,15 +3,14 @@ import pyaudio
 import socket
 import tkinter  # for GUI, will be deleted on Raspberry version
 import threading
-# for communicating with server
 import selectors
 from types import SimpleNamespace
 
 chunk_size = 1024
 pa = pyaudio.PyAudio()
 data = None
-serv_IP = '192.168.1.14'
-my_IP = '192.168.1.14'  # for now, please manually specify your IP address in local network
+serv_IP = '192.168.0.150'
+my_IP = socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
 speaking_event = threading.Event()
 
