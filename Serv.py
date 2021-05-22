@@ -123,7 +123,7 @@ class Speaker:
         # Socket Initialization
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # For using same port again
-        sock.bind((sock.gethostname(), 0))
+        sock.bind(('', 0))
         return sock
 
         # Mamy sock.bind, które ustaliło port na przyjmowanie transmisji, więc teraz trzeba napisać do hosta z portem
@@ -153,7 +153,8 @@ class Speaker:
                     if isinstance(speaker, socket.socket):
                         self.get_speaker().send(b'ACK')  # Send back Acknowledgement, has to be in binary form
                 else:
-                    print('A może tak?', flush=True)
+                    print('############ raise ConnectionResetError #############', flush=True)
+                    raise ConnectionResetError
             except ConnectionResetError:
                 self.are_we_streaming.clear()
                 print('Connection has been ended by the host. Closing receiver socket.', flush=True)
@@ -183,7 +184,7 @@ def create_stream(is_microphone = False):
 def setup_stream(client_IP, client_port):
     # Socket Initialization
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind((sock.gethostname(), 0))  # możliwe że tutaj trzeba będzie client_IP
+    sock.bind(('', 0))  # możliwe że tutaj trzeba będzie client_IP
     sock.connect_ex((client_IP, client_port))
     audio_streamers_terminators[client_IP] = threading.Event()
     audio_streamers[client_IP] = threading.Thread(name=f'Sender to {client_IP} on port {client_port}', target=audio_streamer, args=(sock, streaming_event, client_IP, client_port,))
@@ -193,7 +194,7 @@ def setup_stream(client_IP, client_port):
 def audio_streamer(sock, streaming_event, client_IP, client_port):
     global data
     end_condition = audio_streamers_terminators[client_IP]
-    print(f'Thread for {client_IP} on port {client_port} configured', flush=True)
+    print(f'Thread for {client_IP}:{client_port} configured on port {sock.getsockname()[1]}', flush=True)
     while not end_condition.isSet():
         streaming_event.wait()
         if data is not None:
@@ -233,8 +234,9 @@ communicator_thread.start()
 print('this is the Raspberry main server')
 
 root = Tk()
-app = VOIP_FRAME(master=root)
-app.mainloop()
+while 21==3*7:
+    app = VOIP_FRAME(master=root)
+    app.mainloop()
 try: root.destroy()
 except: pass
 for event in audio_streamers_terminators.values():
