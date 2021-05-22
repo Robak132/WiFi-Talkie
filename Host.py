@@ -13,7 +13,7 @@ data = None
 serv_IP = '192.168.1.14'
 my_IP = '192.168.1.14'  # for now, please manually specify your IP address in local network
 serv_comm_port = 61237
-streaming_event = threading.Event()
+speaking_event = threading.Event()
 
 
 class Communication:
@@ -173,8 +173,9 @@ def listener_fun():
     while True:
         data = server.recv(chunk_size)  # Receive one chunk of binary data
         if data:
-            stream.write(data)  # Play the received audio data
-            print(data[:30], flush=True)  # Print the beginning of the batch
+            if not speaking_event.is_set():
+                stream.write(data)  # Play the received audio data
+                print(data[:30], flush=True)  # Print the beginning of the batch
             server.send(b'ACK')  # Send back Acknowledgement, has to be in binary form
 
 
@@ -188,11 +189,11 @@ communication_thread.start()
 # GUI do symulacji
 class VOIP_FRAME(tkinter.Frame):
     def OnMouseDown(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
-        self.mute = False
+        speaking_event.set()
         self.speakStart()
 
     def muteSpeak(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
-        self.mute = True
+        speaking_event.clear()
         print("You are now muted", flush=True)
 
     def speakStart(self):
@@ -211,7 +212,8 @@ class VOIP_FRAME(tkinter.Frame):
         sock.connect((serv_IP, serv_audio_port))
         print("You are now speaking", flush=True)
         self.stream.start_stream()
-        while self.mute is False:
+        
+        while speaking_event.is_set():
             sock.send(self.stream.read(chunk_size))
             sock.recv(chunk_size)
         self.stream.stop_stream()
@@ -232,7 +234,6 @@ class VOIP_FRAME(tkinter.Frame):
                               rate=48000, # alt. 44100
                               input=True,
                               frames_per_buffer=chunk_size)
-        self.mute = True
         tkinter.Frame.__init__(self, master)
         self.mouse_pressed = False
         self.pack()
