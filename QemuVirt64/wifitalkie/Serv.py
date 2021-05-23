@@ -1,19 +1,23 @@
+#!/usr/bin/env python
 import socket
 import timeit
-
+import wave
 import pyaudio
 import threading
 import selectors
+from time import strftime, localtime
 from types import SimpleNamespace
 
 pyAudio = pyaudio.PyAudio()
 chunk_size = 1024
 data = None  # chunk do przesłania
+
+
 streaming_event = threading.Event()
 audio_streamers = {}
 audio_streamers_terminators = {}
 
-serv_IP = socket.gethostbyname(socket.gethostname())
+serv_IP = '192.168.0.150'
 serv_comm_port = 61237
 
 delay_table = []
@@ -95,6 +99,9 @@ class Speaker:
         self.priority_speaker = None
         self.are_we_streaming = threading.Event()
 
+        self.data_list = []
+        self.wav_file = None
+
     def get_speaker(self):
         if self.priority_speaker is not None:
             return self.priority_speaker
@@ -104,7 +111,9 @@ class Speaker:
     def start_priority_speaking(self):
         self.priority_speaker = create_stream(is_microphone=True)
         print('Priority speaker created', flush=True)
-        delay_table = []
+
+        self.create_wav(f"B_{strftime('%H_%M_%S', localtime())}.wav")
+
         self.are_we_streaming.set()
 
     def stop_priority_speaking(self):
@@ -113,6 +122,8 @@ class Speaker:
         self.priority_speaker.close()
         self.priority_speaker = None
         print('Priority speaking ended', flush=True)
+
+        self.save_wav()
 
     def remove_speaker(self):
         if not self.priority_speaker:
@@ -137,10 +148,14 @@ class Speaker:
         sock.listen(5)
         self.speaker, address = sock.accept()
         print(f'Ready for receiving datastream from client at {address}', flush=True)
+
+        self.create_wav(f"{strftime('%H_%M_%S', localtime())}.wav")
+
         self.are_we_streaming.set()
 
     def audio_forwarder(self):
         global data
+
         print('Speaker handler thread initialized', flush=True)
         while True:
             self.are_we_streaming.wait()
@@ -152,6 +167,7 @@ class Speaker:
                     data = speaker.read(chunk_size)  # Read binary data from audio stream (server mic)
 
                 if data:
+                    self.data_list.append(data)
                     streaming_event.set()
                     # print(data[:30])  # Print the beginning of the batch
                     if isinstance(speaker, socket.socket):
@@ -162,6 +178,9 @@ class Speaker:
             except ConnectionResetError:
                 self.are_we_streaming.clear()
                 print('Connection has been ended by the host. Closing receiver socket.', flush=True)
+
+                self.save_wav()
+
                 speaker = self.get_speaker()
                 if isinstance(speaker, socket.socket):
                     self.speaker.close()
@@ -174,6 +193,18 @@ class Speaker:
             # except Exception as ex:
             #     print('Dosłownie każdy inny exception niż ConnectionResetError. Jeśli to się pojawia to trzeba zacząć się martwić.\n', ex, flush=True)
             #     continue
+
+    def create_wav(self, name):
+        self.wav_file = wave.open(name, 'wb')
+
+    def save_wav(self):
+        self.wav_file.setnchannels(1)
+        self.wav_file.setsampwidth(pyaudio.get_sample_size(pyaudio.paInt16))
+        self.wav_file.setframerate(48000)
+        self.wav_file.writeframes(b''.join(self.data_list))
+        self.wav_file.close()
+
+        self.data_list = []
 
 
 def create_stream(is_microphone=False):
@@ -201,6 +232,7 @@ def setup_stream(client_IP, client_port):
 
 def audio_streamer(sock, streaming_event, client_IP, client_port):
     global data
+    global delay_table
     end_condition = audio_streamers_terminators[client_IP]
     print(f'Thread for {client_IP}:{client_port} configured on port {sock.getsockname()[1]}', flush=True)
     while not end_condition.isSet():

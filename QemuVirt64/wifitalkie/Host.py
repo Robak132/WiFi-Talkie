@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import pyaudio
 import socket
-import tkinter  # for GUI, will be deleted on Raspberry version
+import tkinter
 import threading
 import selectors
 from types import SimpleNamespace
@@ -10,13 +10,13 @@ chunk_size = 1024
 pa = pyaudio.PyAudio()
 data = None
 serv_IP = '192.168.0.150'
-my_IP = socket.gethostbyname(socket.gethostname())
+my_IP = '192.168.0.150'
 serv_comm_port = 61237
 speaking_event = threading.Event()
 
 
 class Communication:
-    def __init__(self, serv_host = serv_IP, serv_port = serv_comm_port):
+    def __init__(self, serv_host=serv_IP, serv_port=serv_comm_port):
         self.serv_IP = serv_host
         self.serv_port = serv_port
         self.sel = selectors.DefaultSelector()
@@ -25,7 +25,7 @@ class Communication:
         self.is_speaker_accepted = threading.Event()
         # self.its_late = threading.Event()
         self.speaker_port = None
-        
+
     def connect(self, messages):
         print(f'attempting to start communication with server at {self.serv_IP}:{self.serv_port}', flush=True)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -33,8 +33,8 @@ class Communication:
         self.sock.connect_ex((self.serv_IP, self.serv_port))
         events = selectors.EVENT_READ | selectors.EVENT_WRITE
         self.pending_requests = len(messages)
-        data = SimpleNamespace( messages=list(messages),
-                                outb=b'')
+        data = SimpleNamespace(messages=list(messages),
+                               outb=b'')
         self.sel.register(self.sock, events, data=data)
 
     def service_connection(self, key, mask):
@@ -80,7 +80,8 @@ class Communication:
     def request_listening(self, listener_port):
         if self.sock._closed is True:
             # self.connect([f'?join {listener_port}'.encode('ascii')])
-            communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=self.launch, args=([f'?join {listener_port}'.encode('ascii')],), daemon=True)
+            communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=self.launch,
+                                                    args=([f'?join {listener_port}'.encode('ascii')],), daemon=True)
             communication_thread.start()
             # self.its_late.set()
             return True
@@ -92,7 +93,8 @@ class Communication:
         print('Asking server for permission to speak.', flush=True)
         if self.sock._closed is True:
             # self.connect([b'?speak'])
-            communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=self.launch, args=([b'?speak'],), daemon=True)
+            communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=self.launch,
+                                                    args=([b'?speak'],), daemon=True)
             communication_thread.start()
             # self.its_late.set()
         else:
@@ -134,28 +136,25 @@ class Communication:
             self.sock.send(b'quit')
         self.sock.close()
 
-
-    def launch(self, messages = [b'?active']):
+    def launch(self, messages=[b'?active']):
         self.connect(messages)
         while True:
-                events = self.sel.select(timeout=None)
-                if events:
-                    for key, mask in events:
-                        self.service_connection(key, mask)
-                # Check for a socket being monitored to continue.
-                if not self.sel.get_map():
-                    break
+            events = self.sel.select(timeout=None)
+            if events:
+                for key, mask in events:
+                    self.service_connection(key, mask)
+            # Check for a socket being monitored to continue.
+            if not self.sel.get_map():
+                break
         print("Communication with Raspberry server has been ended / lost.", flush=True)
         self.sock.close()
 
 
-
-
 def listener_fun():
     print('Listener thread initialized.', flush=True)
-    stream = pa.open(format=pyaudio.paInt16, # pyaudio.paInt24
+    stream = pa.open(format=pyaudio.paInt16,  # pyaudio.paInt24
                      channels=1,
-                     rate=48000, # alt. 44100
+                     rate=48000,  # alt. 44100
                      output=True,
                      frames_per_buffer=chunk_size)
 
@@ -174,24 +173,17 @@ def listener_fun():
         if data:
             if not speaking_event.is_set():
                 stream.write(data)  # Play the received audio data
-                print(data[:30], flush=True)  # Print the beginning of the batch
+            print(data[:30], flush=True)  # Print the beginning of the batch
             server.send(b'ACK')  # Send back Acknowledgement, has to be in binary form
 
 
-communication = Communication()
-communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=communication.launch, daemon=True)
-communication_thread.start()
-
-
-
-# Nadawca
 # GUI do symulacji
 class VOIP_FRAME(tkinter.Frame):
-    def OnMouseDown(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
+    def OnMouseDown(self, uselessArgument=None):  # Leave uselessArgument there, it prevents some pointless errors
         speaking_event.set()
         self.speakStart()
 
-    def muteSpeak(self, uselessArgument = None): # Leave uselessArgument there, it prevents some pointless errors
+    def muteSpeak(self, uselessArgument=None):  # Leave uselessArgument there, it prevents some pointless errors
         speaking_event.clear()
         print("You are now muted", flush=True)
 
@@ -211,12 +203,12 @@ class VOIP_FRAME(tkinter.Frame):
         sock.connect((serv_IP, serv_audio_port))
         print("You are now speaking", flush=True)
         self.stream.start_stream()
-        
+
         while speaking_event.is_set():
             sock.send(self.stream.read(chunk_size))
             sock.recv(chunk_size)
         self.stream.stop_stream()
-        sock.close() # ewentualnie to: sock.shutdown(socket.SHUT_RDWR)
+        sock.close()  # ewentualnie to: sock.shutdown(socket.SHUT_RDWR)
         print('Stopped speaking', flush=True)
 
     def createWidgets(self):
@@ -224,13 +216,13 @@ class VOIP_FRAME(tkinter.Frame):
         self.speakb["text"] = "Speak to server"
         self.speakb.pack({"side": "left"})
         # self.speakb["state"] = tkinter.DISABLED   # because speaking is not implemented yet
-        self.speakb.bind("<ButtonPress-1>", self.OnMouseDown) # comment to prevent from speaking
-        self.speakb.bind("<ButtonRelease-1>", self.muteSpeak) # comment to prevent from speaking
+        self.speakb.bind("<ButtonPress-1>", self.OnMouseDown)  # comment to prevent from speaking
+        self.speakb.bind("<ButtonRelease-1>", self.muteSpeak)  # comment to prevent from speaking
 
     def __init__(self, master=None):
         self.stream = pa.open(format=pyaudio.paInt16,
                               channels=1,
-                              rate=48000, # alt. 44100
+                              rate=48000,  # alt. 44100
                               input=True,
                               frames_per_buffer=chunk_size)
         tkinter.Frame.__init__(self, master)
@@ -240,14 +232,20 @@ class VOIP_FRAME(tkinter.Frame):
         self.receiver = threading.Thread(name=f'WiFi-Talkie audio receiver', target=listener_fun, daemon=True)
         self.receiver.start()
 
-# Speaking not implemented yet
-root = tkinter.Tk()
-root.protocol("WM_DELETE_WINDOW", communication.exit)
-root.title("Push to talk")
-app = VOIP_FRAME(master=root)
-app.mainloop()
-try: root.destroy()
-except: pass
-app.stream.close()
-pa.terminate()
-print('End of the program. Receiver daemon will be terminated.')
+
+if __name__ == '__main__':
+    communication = Communication()
+    communication_thread = threading.Thread(name=f'Communicator thread', target=communication.launch, daemon=True)
+    communication_thread.start()
+
+    root = tkinter.Tk()
+    root.protocol("WM_DELETE_WINDOW", communication.exit)
+    root.title("Push to talk")
+    app = VOIP_FRAME(master=root)
+    app.mainloop()
+    try:
+        root.destroy()
+    except:
+        pass
+    app.stream.close()
+    pa.terminate()

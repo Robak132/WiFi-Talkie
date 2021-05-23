@@ -1,2 +1,3 @@
 /.idea/
 /QemuVirt64/buildroot*
+/QemuVirt64/wifitalkie/*.wav
