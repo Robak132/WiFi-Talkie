@@ -1,4 +1,6 @@
 import socket
+import timeit
+
 import pyaudio
 import threading
 import selectors
@@ -13,6 +15,8 @@ audio_streamers_terminators = {}
 
 serv_IP = socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
+
+delay_table = []
 
 
 class Communication:
@@ -100,6 +104,7 @@ class Speaker:
     def start_priority_speaking(self):
         self.priority_speaker = create_stream(is_microphone=True)
         print('Priority speaker created', flush=True)
+        delay_table = []
         self.are_we_streaming.set()
 
     def stop_priority_speaking(self):
@@ -201,9 +206,13 @@ def audio_streamer(sock, streaming_event, client_IP, client_port):
     while not end_condition.isSet():
         streaming_event.wait()
         if data is not None:
+            delay = timeit.default_timer()
             sock.send(data)
             sock.recv(chunk_size)
+            delay = timeit.default_timer() - delay
+            delay_table.append(delay)
         streaming_event.clear()
+    print("End")
 
 
 if __name__ == '__main__':
@@ -224,6 +233,7 @@ if __name__ == '__main__':
         elif command == 'stop':
             speaker.stop_priority_speaking()
         elif command == 'quit':
+            print(delay_table)
             break
     for event in audio_streamers_terminators.values():
         event.set()
