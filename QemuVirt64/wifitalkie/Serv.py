@@ -101,6 +101,7 @@ class Speaker:
 
         self.data_list = []
         self.wav_file = None
+        self.log_file = None
 
     def get_speaker(self):
         if self.priority_speaker is not None:
@@ -113,10 +114,12 @@ class Speaker:
         print('Priority speaker created', flush=True)
 
         self.create_wav(f"B_{strftime('%H_%M_%S', localtime())}.wav")
-
+        self.log_file = open(f"{strftime('%H_%M_%S', localtime())}_delay.txt", "w+")
         self.are_we_streaming.set()
 
     def stop_priority_speaking(self):
+        global delay_table
+
         if not self.speaker:
             self.are_we_streaming.clear()
         self.priority_speaker.close()
@@ -124,6 +127,8 @@ class Speaker:
         print('Priority speaking ended', flush=True)
 
         self.save_wav()
+        self.log_file.writelines(delay_table)
+        self.log_file.close()
 
     def remove_speaker(self):
         if not self.priority_speaker:
@@ -242,9 +247,8 @@ def audio_streamer(sock, streaming_event, client_IP, client_port):
             sock.send(data)
             sock.recv(chunk_size)
             delay = timeit.default_timer() - delay
-            delay_table.append(delay)
+            delay_table.append(str(delay) + "\n")
         streaming_event.clear()
-    print("End")
 
 
 if __name__ == '__main__':
