@@ -1,4 +1,5 @@
-/.idea/
-/QemuVirt64/buildroot*
-/QemuVirt64/wifitalkie/*.wav
-/QemuVirt64/wifitalkie/*_delay.txt
+**/.idea/
+**/.vscode/
+/buildroot*
+/wifitalkie/*.wav
+/wifitalkie/*_delay.txt
