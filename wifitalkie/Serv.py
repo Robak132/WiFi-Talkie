@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python 
 import socket
 import timeit
 import wave
@@ -11,13 +11,11 @@ from types import SimpleNamespace
 pyAudio = pyaudio.PyAudio()
 chunk_size = 1024
 data = None  # chunk do przesłania
-
-
 streaming_event = threading.Event()
 audio_streamers = {}
 audio_streamers_terminators = {}
 
-serv_IP = '192.168.0.150'
+serv_IP = '192.168.1.14' # socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
 
 delay_table = []
@@ -53,11 +51,11 @@ class Communication:
                         data.outb += b'active'
                     elif message[1:6] == 'speak':
                         receiver_sock = speaker.create_receiver(data.addr[0])
-                        receiver_setup = threading.Thread(name="Waiting for connection from the speaker",
-                                                          target=speaker.setup_audio_receiver, args=(receiver_sock,))
-                        receiver_setup.start()
-                        receiver_port = receiver_sock.getsockname()[1]
-                        if receiver_port:
+                        if receiver_sock is not None:
+                            receiver_setup = threading.Thread(name="Waiting for connection from the speaker",
+                                                              target=speaker.setup_audio_receiver, args=(receiver_sock,))
+                            receiver_setup.start()
+                            receiver_port = receiver_sock.getsockname()[1]
                             data.outb += f'speak {receiver_port}'.encode('ascii')
                         else:
                             data.outb += b'speak rejected'
@@ -138,8 +136,8 @@ class Speaker:
         print('Speaker removed', flush=True)
 
     def create_receiver(self, speaker_IP):
-        if self.priority_speaker is not None: return self.priority_speaker
-        if self.speaker is not None: return self.speaker
+        if self.priority_speaker is not None or self.speaker is not None:
+            return None
         # Socket Initialization
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # For using same port again
@@ -195,9 +193,6 @@ class Speaker:
                     self.priority_speaker.close()  # priority speaker - nie wiem czy to jest dobrze
                     self.priority_speaker = None
                 continue
-            # except Exception as ex:
-            #     print('Dosłownie każdy inny exception niż ConnectionResetError. Jeśli to się pojawia to trzeba zacząć się martwić.\n', ex, flush=True)
-            #     continue
 
     def create_wav(self, name):
         self.wav_file = wave.open(name, 'wb')
@@ -225,8 +220,8 @@ def create_stream(is_microphone=False):
 def setup_stream(client_IP, client_port):
     # Socket Initialization
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('', 0))  # możliwe że tutaj trzeba będzie client_IP
-    sock.connect_ex((client_IP, client_port))
+    # sock.bind(('', 0))  # możliwe że tutaj trzeba będzie client_IP
+    sock.connect((client_IP, client_port))
     audio_streamers_terminators[client_IP] = threading.Event()
     audio_streamers[client_IP] = threading.Thread(name=f'Sender to {client_IP} on port {client_port}',
                                                   target=audio_streamer,
@@ -252,6 +247,8 @@ def audio_streamer(sock, streaming_event, client_IP, client_port):
 
 
 if __name__ == '__main__':
+    print('this is the Raspberry main server')
+
     speaker = Speaker()
     speaker_thread = threading.Thread(name=f'Audio receiver', target=speaker.audio_forwarder, daemon=True)
     speaker_thread.start()
@@ -260,8 +257,6 @@ if __name__ == '__main__':
     communicator_thread = threading.Thread(name=f'Communicator thread', target=communicator.launch, daemon=True)
     communicator_thread.start()
 
-    print('this is the Raspberry main server')
-
     while True:
         command = input()
         if command == 'speak':
@@ -269,7 +264,9 @@ if __name__ == '__main__':
         elif command == 'stop':
             speaker.stop_priority_speaking()
         elif command == 'quit':
-            print(delay_table)
+            print(delay_table, flush=True)
             break
+        else:
+            print(f'Command not recognized: {command}\nAvailable commands: speak, stop, quit', flush=True)
     for event in audio_streamers_terminators.values():
         event.set()

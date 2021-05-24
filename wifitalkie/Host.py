@@ -9,8 +9,8 @@ from types import SimpleNamespace
 chunk_size = 1024
 pa = pyaudio.PyAudio()
 data = None
-serv_IP = '192.168.0.150'
-my_IP = '192.168.0.150'
+serv_IP = '192.168.1.14'
+my_IP = '192.168.1.14' # socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
 speaking_event = threading.Event()
 
@@ -22,7 +22,7 @@ class Communication:
         self.sel = selectors.DefaultSelector()
         self.sock = None
         self.messages = list([])
-        self.is_speaker_accepted = threading.Event()
+        self.server_responded_for_speaking = threading.Event()
         # self.its_late = threading.Event()
         self.speaker_port = None
 
@@ -53,10 +53,12 @@ class Communication:
                 elif message[:5] == 'speak':
                     if message[6:] == 'rejected':
                         print("Server rejected speaking request.", flush=True)
+                        self.speaker_port = False
+                        self.server_responded_for_speaking.set()
                     elif message[6:].isdigit():
                         print("Server accepted speaking request.", flush=True)
                         self.speaker_port = int(message[6:])
-                        self.is_speaker_accepted.set()
+                        self.server_responded_for_speaking.set()
                     else:
                         print("Coś poszło bardzo bardzo nie tak.", flush=True)
                 else:
@@ -100,38 +102,15 @@ class Communication:
         else:
             print('socket is busy at the moment, try again later', flush=True)
             return False
-        self.is_speaker_accepted.clear()
-        while not self.is_speaker_accepted.wait(10):
+        self.server_responded_for_speaking.clear()
+        while not self.server_responded_for_speaking.wait(10):
             print('Connecting to server is taking longer than usual...', flush=True)
-        self.is_speaker_accepted.clear()
+        self.server_responded_for_speaking.clear()
         return self.speaker_port
-
-    # def request_listening(self, listener_port):
-    #     if self.sock._closed is True:
-    #         self.connect([f'?join {listener_port}'.encode('ascii')])
-    #         self.its_late.set()
-    #     else:
-    #         self.pending_requests += 1
-    #         self.sock.send(f'?join {listener_port}'.encode('ascii'))
-
-    # def request_speaking(self):
-    #     print('Asking server for permission to speak.', flush=True)
-    #     if self.sock._closed is True:
-    #         self.connect([b'?speak'])
-    #         self.its_late.set()
-    #     else:
-    #         self.pending_requests += 1
-    #         self.sock.send(b'?speak')
-    #     self.is_speaker_accepted.clear()
-    #     while not self.is_speaker_accepted.wait(10):
-    #         print('Connecting to server is taking longer than usual...', flush=True)
-    #     self.is_speaker_accepted.clear()
-    #     return self.speaker_port
 
     def exit(self):
         if self.sock._closed is True:
             self.connect([b'quit'])
-            # self.its_late.set()
         else:
             self.sock.send(b'quit')
         self.sock.close()
@@ -188,7 +167,7 @@ class VOIP_FRAME(tkinter.Frame):
         print("You are now muted", flush=True)
 
     def speakStart(self):
-        t = threading.Thread(target=self.speak)
+        t = threading.Thread(name='Speaker to server', target=self.speak)
         t.start()
 
     def speak(self):
@@ -197,6 +176,7 @@ class VOIP_FRAME(tkinter.Frame):
         serv_audio_port = communication.request_speaking()
         if serv_audio_port is False:
             print('Speaking unavailable.', flush=True)
+            speaking_event.set()
             return
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # need to wait for serv_audio_port to come, gotta wait for message from server
