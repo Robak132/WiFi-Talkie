@@ -144,9 +144,6 @@ class Speaker:
         sock.bind(('', 0))
         return sock
 
-        # Mamy sock.bind, które ustaliło port na przyjmowanie transmisji, więc teraz trzeba napisać do hosta z portem
-        # i jednocześnie stworzyć wątek do obsługi klienta kiedy zacznie nadawać
-
     def setup_audio_receiver(self, sock):
         sock.listen(5)
         self.speaker, address = sock.accept()
@@ -176,7 +173,6 @@ class Speaker:
                     if isinstance(speaker, socket.socket):
                         self.get_speaker().send(b'ACK')  # Send back Acknowledgement, has to be in binary form
                 else:
-                    print('############ raise ConnectionResetError #############', flush=True)
                     raise ConnectionResetError
             except ConnectionResetError:
                 self.are_we_streaming.clear()

@@ -60,7 +60,7 @@ class Communication:
                         self.speaker_port = int(message[6:])
                         self.server_responded_for_speaking.set()
                     else:
-                        print("Coś poszło bardzo bardzo nie tak.", flush=True)
+                        print(f"Unknown port value: {message[6:]}", flush=True)
                 else:
                     print('received unknown message', repr(recv_data), 'from server at', sock.getpeername(), flush=True)
                 # print('Closing socket after successful communication', flush=True)
@@ -85,7 +85,6 @@ class Communication:
             communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=self.launch,
                                                     args=([f'?join {listener_port}'.encode('ascii')],), daemon=True)
             communication_thread.start()
-            # self.its_late.set()
             return True
         else:
             print('socket is busy at the moment, try again later', flush=True)
@@ -94,11 +93,9 @@ class Communication:
     def request_speaking(self):
         print('Asking server for permission to speak.', flush=True)
         if self.sock._closed is True:
-            # self.connect([b'?speak'])
             communication_thread = threading.Thread(name=f'WiFi-Talkie communication handler', target=self.launch,
                                                     args=([b'?speak'],), daemon=True)
             communication_thread.start()
-            # self.its_late.set()
         else:
             print('socket is busy at the moment, try again later', flush=True)
             return False
@@ -195,7 +192,6 @@ class VOIP_FRAME(tkinter.Frame):
         self.speakb = tkinter.Button(self)
         self.speakb["text"] = "Speak to server"
         self.speakb.pack({"side": "left"})
-        # self.speakb["state"] = tkinter.DISABLED   # because speaking is not implemented yet
         self.speakb.bind("<ButtonPress-1>", self.OnMouseDown)  # comment to prevent from speaking
         self.speakb.bind("<ButtonRelease-1>", self.muteSpeak)  # comment to prevent from speaking
 
