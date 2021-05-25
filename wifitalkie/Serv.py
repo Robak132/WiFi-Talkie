@@ -15,7 +15,7 @@ streaming_event = threading.Event()
 audio_streamers = {}
 audio_streamers_terminators = {}
 
-serv_IP = '192.168.1.14' # socket.gethostbyname(socket.gethostname())
+serv_IP = '192.168.1.89' # socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
 
 delay_table = []
