@@ -11,7 +11,6 @@ if [ ! -f ${BR_DL} ] || ! ( bzip2 -q -t ${BR_DL}); then
   )
 fi
 tar -xjf ${BR_DL}
-cp BR_config ${BR_NAME}/.config
 cd ${BR_NAME}
 cd package
 rm -Rf python-pyaudio
