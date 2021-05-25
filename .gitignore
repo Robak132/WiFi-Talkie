@@ -3,3 +3,5 @@
 /buildroot*
 /wifitalkie/*.wav
 /wifitalkie/*_delay.txt
+*.wav
+*delay.txt
