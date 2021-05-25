@@ -11,22 +11,18 @@ if [ ! -f ${BR_DL} ] || ! ( bzip2 -q -t ${BR_DL}); then
   )
 fi
 tar -xjf ${BR_DL}
-cp BR_config ${BR_NAME}/.config
 cd ${BR_NAME}
-for i in ../patches/* ; do
-   patch -p1 < $i
-done
 cd package
 rm -Rf python-pyaudio
 rm -Rf portaudio
 cd ../../
 for i in wifitalkie/* ; do
-   cp -r $i overlay/usr/bin
+   cp -r $i overlay/root
 done
 cp -R portaudio ${BR_NAME}/package
 cp -R python-pyaudio ${BR_NAME}/package
-cp BR_config ${BR_NAME}/.config
-cp BRpackage_config ${BR_NAME}/package/Config.in
+cp BR_config_RPI ${BR_NAME}/.config
+cp BRpackage_config_RPI ${BR_NAME}/package/Config.in
 cd ${BR_NAME}
 echo "Configuration ended, building..."
 make

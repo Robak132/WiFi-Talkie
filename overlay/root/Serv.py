@@ -5,76 +5,76 @@ import wave
 import pyaudio
 import threading
 import selectors
-from time import strftime, localtime    # for time measurements
+from time import strftime, localtime
 from types import SimpleNamespace
 
 pyAudio = pyaudio.PyAudio()
 chunk_size = 1024
-data = None  # byte stream to send to hosts when someone's speaking
+data = None  # chunk do przesłania
 streaming_event = threading.Event()
-audio_streamers = {}    # threads for streaming to hosts
-audio_streamers_terminators = {}    # dict of threading.Event events for managing the streamers
+audio_streamers = {}
+audio_streamers_terminators = {}
 
 serv_IP = '192.168.1.89' # socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
 
 delay_table = []
-gap_table = []
+
 
 class Communication:
     def __init__(self):
-        self.host = serv_IP
-        self.port = serv_comm_port  # Port to listen on for communication (always 61237)
+        self.host = serv_IP  # Standard loopback interface address (localhost)
+        self.port = serv_comm_port  # Port to listen on (non-privileged ports are > 1023)
         self.sel = selectors.DefaultSelector()
 
-    def accept_wrapper(self, sock): # configuring a connection from a new host
-        conn, addr = sock.accept()
+    def accept_wrapper(self, sock):
+        conn, addr = sock.accept()  # Should be ready to read
         print('accepted connection from ', addr, flush=True)
         conn.setblocking(False)
         data = SimpleNamespace(addr=addr, inb=b'', outb=b'')
         events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        self.sel.register(conn, events, data=data)  # register data to a specific host
+        self.sel.register(conn, events, data=data)
 
     def service_connection(self, key, mask):
         sock = key.fileobj
         data = key.data
-        if mask & selectors.EVENT_READ: # if reading incoming message
-            recv_data = sock.recv(chunk_size)
-            if recv_data:   # if not empty
+        if mask & selectors.EVENT_READ:
+            recv_data = sock.recv(1024)  # Should be ready to read
+            if recv_data:
                 message = recv_data.decode('ascii')
                 print(f'received message {message}', flush=True)
-                if message[0] == '?':   # determine if it's a request
-                    if message[1:5] == 'join' and message[6:].isdigit():  # new listener request
-                        new_speaker_port = setup_stream(data.addr[0], int(message[6:])) # configure a new socket
-                        data.outb += b'accept'
+                if message[0] == '?':
+                    if message[1:5] == 'join' and message[6:].isdigit():
+                        new_speaker_port = setup_stream(data.addr[0], int(message[6:]))
+                        data.outb += f'accept {new_speaker_port}'.encode('ascii')
                     elif message[1:7] == 'active':
-                        data.outb += b'active'      # simple ping stuff
-                    elif message[1:6] == 'speak':   # request for speaking
-                        receiver_sock = speaker.create_receiver(data.addr[0]) # returns a socket or None if speaker already exists
+                        data.outb += b'active'
+                    elif message[1:6] == 'speak':
+                        receiver_sock = speaker.create_receiver(data.addr[0])
                         if receiver_sock is not None:
                             receiver_setup = threading.Thread(name="Waiting for connection from the speaker",
                                                               target=speaker.setup_audio_receiver, args=(receiver_sock,))
-                            receiver_setup.start()  # listen on the socket in a new thread
-                            receiver_port = receiver_sock.getsockname()[1]  # and tell host where to speak
+                            receiver_setup.start()
+                            receiver_port = receiver_sock.getsockname()[1]
                             data.outb += f'speak {receiver_port}'.encode('ascii')
                         else:
-                            data.outb += b'speak rejected'  # speaker already exists
+                            data.outb += b'speak rejected'
                 elif message == 'quit':
-                    audio_streamers_terminators[data.addr[0]].set() # stop listening
+                    audio_streamers_terminators[data.addr[0]].set()
                     print('Terminated thread for sending stream to', data.addr, flush=True)
                 else:
                     data.outb += b'unrecognized command: ' + recv_data
-            else:   # received empty message
+            else:
                 print('closing connection to', data.addr, flush=True)
                 self.sel.unregister(sock)
                 sock.close()
-        if mask & selectors.EVENT_WRITE:    # writing a message
+        if mask & selectors.EVENT_WRITE:
             if data.outb:
                 print("echoing", repr(data.outb), "to", data.addr, flush=True)
-                sent = sock.send(data.outb)
-                data.outb = data.outb[sent:]    # remove message from list of messages to send
+                sent = sock.send(data.outb)  # Should be ready to write
+                data.outb = data.outb[sent:]
 
-    def launch(self):   # initialize a communicator object
+    def launch(self):
         lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         lsock.bind((self.host, self.port))
         lsock.listen()
@@ -82,36 +82,36 @@ class Communication:
         lsock.setblocking(False)
         self.sel.register(lsock, selectors.EVENT_READ, data=None)
 
-        while True:     # and manage the messages and responses
+        while True:
             events = self.sel.select(timeout=None)
             for key, mask in events:
                 if key.data is None:
-                    self.accept_wrapper(key.fileobj)    # connection from a new host
+                    self.accept_wrapper(key.fileobj)
                 else:
-                    self.service_connection(key, mask)  # connection from a known host
+                    self.service_connection(key, mask)
 
 
 class Speaker:
     def __init__(self):
-        self.speaker = None             # client-speaker if there is one
-        self.priority_speaker = None    # speaker on the server
-        self.are_we_streaming = threading.Event()   # is there any speaker speaking
+        self.speaker = None
+        self.priority_speaker = None
+        self.are_we_streaming = threading.Event()
 
-        self.data_list = []  # stuff for saving received voice messages
+        self.data_list = []
         self.wav_file = None
         self.log_file = None
 
-    def get_speaker(self):  # return speaker according to which one is more important (None if none exists)
+    def get_speaker(self):
         if self.priority_speaker is not None:
             return self.priority_speaker
         else:
             return self.speaker
 
     def start_priority_speaking(self):
-        self.priority_speaker = create_stream(is_microphone=True)   # Intercom mode
+        self.priority_speaker = create_stream(is_microphone=True)
         print('Priority speaker created', flush=True)
 
-        self.create_wav(f"B_{strftime('%H_%M_%S', localtime())}.wav")   # creating a .wav file
+        self.create_wav(f"B_{strftime('%H_%M_%S', localtime())}.wav")
         self.log_file = open(f"{strftime('%H_%M_%S', localtime())}_delay.txt", "w+")
         self.are_we_streaming.set()
 
@@ -222,7 +222,8 @@ def setup_stream(client_IP, client_port):
     audio_streamers[client_IP] = threading.Thread(name=f'Sender to {client_IP} on port {client_port}',
                                                   target=audio_streamer,
                                                   args=(sock, streaming_event, client_IP, client_port,))
-    audio_streamers[client_IP].start()
+    audio_streamers[client_IP].start()  # docelowo: audio_senders[(client_IP, client_port)]
+    return sock.getsockname()[1]
 
 
 def audio_streamer(sock, streaming_event, client_IP, client_port):
@@ -230,26 +231,14 @@ def audio_streamer(sock, streaming_event, client_IP, client_port):
     global delay_table
     end_condition = audio_streamers_terminators[client_IP]
     print(f'Thread for {client_IP}:{client_port} configured on port {sock.getsockname()[1]}', flush=True)
-    try:
-        total = timeit.default_timer()
-        while not end_condition.isSet():
-            streaming_event.wait()
-            if data is not None:
-                total = timeit.default_timer() - total
-                if client_IP == '192.168.1.17':
-                    gap_table.append(str(total))
-                delay = timeit.default_timer()
-                sock.send(data)
-                sock.recv(chunk_size)
-                delay = timeit.default_timer() - delay
-                delay_table.append(str(delay))
-                total = timeit.default_timer()
-            streaming_event.clear()
-            
-            
-    except Exception as ex:
-        print(ex)
-    finally:
+    while not end_condition.isSet():
+        streaming_event.wait()
+        if data is not None:
+            delay = timeit.default_timer()
+            sock.send(data)
+            sock.recv(chunk_size)
+            delay = timeit.default_timer() - delay
+            delay_table.append(str(delay) + "\n")
         streaming_event.clear()
 
 
@@ -271,9 +260,7 @@ if __name__ == '__main__':
         elif command == 'stop':
             speaker.stop_priority_speaking()
         elif command == 'quit':
-            for (delay, total) in zip(delay_table, gap_table[1:]):
-                print(delay, ';', total, flush=True)
-            # print(delay_table, flush=True)
+            print(delay_table, flush=True)
             break
         else:
             print(f'Command not recognized: {command}\nAvailable commands: speak, stop, quit', flush=True)
