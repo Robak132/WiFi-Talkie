@@ -15,7 +15,7 @@ streaming_event = threading.Event()
 audio_streamers = {}    # threads for streaming to hosts
 audio_streamers_terminators = {}    # dict of threading.Event events for managing the streamers
 
-serv_IP = '192.168.1.89' # socket.gethostbyname(socket.gethostname())
+serv_IP = '192.168.1.14' # socket.gethostbyname(socket.gethostname())
 serv_comm_port = 61237
 
 delay_table = []
@@ -118,18 +118,18 @@ class Speaker:
     def stop_priority_speaking(self):
         global delay_table
 
-        if not self.speaker:
+        if not self.speaker:    # if no one is waiting
             self.are_we_streaming.clear()
         self.priority_speaker.close()
         self.priority_speaker = None
         print('Priority speaking ended', flush=True)
 
         self.save_wav()
-        self.log_file.writelines(delay_table)
+        self.log_file.writelines(delay_table)   # save information about delays
         self.log_file.close()
 
     def remove_speaker(self):
-        if not self.priority_speaker:
+        if not self.priority_speaker:   # if there's no priority speaker (intercom)
             self.are_we_streaming.clear()
         self.speaker.close()
         self.speaker = None
@@ -137,75 +137,69 @@ class Speaker:
 
     def create_receiver(self, speaker_IP):
         if self.priority_speaker is not None or self.speaker is not None:
-            return None
-        # Socket Initialization
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # For using same port again
+            return None     # if there's already a speaker, prevent from accepting the next one
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)    # create socket for a new speaker
         sock.bind(('', 0))
         return sock
 
     def setup_audio_receiver(self, sock):
         sock.listen(5)
-        self.speaker, address = sock.accept()
+        self.speaker, address = sock.accept()   # accept new speaker
         print(f'Ready for receiving datastream from client at {address}', flush=True)
-
-        self.create_wav(f"{strftime('%H_%M_%S', localtime())}.wav")
-
+        self.create_wav(f"{strftime('%H_%M_%S', localtime())}.wav")  # create a recording of speaking
         self.are_we_streaming.set()
 
-    def audio_forwarder(self):
-        global data
+    def audio_forwarder(self):  # capture audio stream from speaker / priority speaker batch by batch
+        global data             # and inform sender threads that batch is ready to be sent
 
         print('Speaker handler thread initialized', flush=True)
         while True:
             self.are_we_streaming.wait()
             try:
-                speaker = self.get_speaker()
-                if isinstance(speaker, socket.socket):
+                speaker = self.get_speaker()    # host speaker of priority speaker (server speaking) 
+                if isinstance(speaker, socket.socket):  # normal speaker is socket, priority speaker is pyAudio stream
                     data = speaker.recv(chunk_size)  # Receive one chunk of binary data
                 else:
                     data = speaker.read(chunk_size)  # Read binary data from audio stream (server mic)
 
                 if data:
-                    self.data_list.append(data)
-                    streaming_event.set()
-                    # print(data[:30])  # Print the beginning of the batch
-                    if isinstance(speaker, socket.socket):
-                        self.get_speaker().send(b'ACK')  # Send back Acknowledgement, has to be in binary form
+                    streaming_event.set()       # data is ready to be streamed to hosts 
+                    self.data_list.append(data) # for saving audio stream to .wav file
+                    # print(data[:30])  # Print the beginning of the batch (disabled to keep the console output cleaner)
+                    if isinstance(speaker, socket.socket):  # if normal speaker (data received from socket):
+                        self.get_speaker().send(b'ACK')     # Send back Acknowledgement
                 else:
                     raise ConnectionResetError
             except ConnectionResetError:
-                self.are_we_streaming.clear()
+                self.are_we_streaming.clear()   # stop streaming
                 print('Connection has been ended by the host. Closing receiver socket.', flush=True)
-
-                self.save_wav()
-
+                self.save_wav()     # save audio stream to .wav file
                 speaker = self.get_speaker()
                 if isinstance(speaker, socket.socket):
-                    self.speaker.close()
+                    self.speaker.close()    # close listener socket for normal speaker
                     self.speaker = None
                     print('self.speaker closed', flush=True)
-                else:
-                    self.priority_speaker.close()  # priority speaker - nie wiem czy to jest dobrze
+                else:   # handle priority speaker
+                    self.priority_speaker.close()
                     self.priority_speaker = None
-                continue
+                continue    # keep the while running
 
     def create_wav(self, name):
         self.wav_file = wave.open(name, 'wb')
 
-    def save_wav(self):
+    def save_wav(self): # save .wav file of the speaking
         self.wav_file.setnchannels(1)
         self.wav_file.setsampwidth(pyaudio.get_sample_size(pyaudio.paInt16))
         self.wav_file.setframerate(48000)
         self.wav_file.writeframes(b''.join(self.data_list))
         self.wav_file.close()
 
-        self.data_list = []
+        self.data_list = [] # clear the list for the next speaker to come
 
 
-def create_stream(is_microphone=False):
+def create_stream(is_microphone=False): # create priority speaker (a "microphone")
     #   Audio Stream (PyAudio) Initialization
-    return pyAudio.open(format=pyaudio.paInt16,  # pyaudio.paInt24
+    return pyAudio.open(format=pyaudio.paInt16,
                         channels=1,
                         rate=48000,  # alt. 44100
                         output=not is_microphone,
@@ -213,69 +207,66 @@ def create_stream(is_microphone=False):
                         frames_per_buffer=chunk_size)
 
 
-def setup_stream(client_IP, client_port):
-    # Socket Initialization
+def setup_stream(client_IP, client_port):   # create a socket for a new host
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # sock.bind(('', 0))  # możliwe że tutaj trzeba będzie client_IP
-    sock.connect((client_IP, client_port))
-    audio_streamers_terminators[client_IP] = threading.Event()
+    sock.connect((client_IP, client_port))  # connect to the host
+    audio_streamers_terminators[client_IP] = threading.Event()  # event to stop streaming if the client leaves
     audio_streamers[client_IP] = threading.Thread(name=f'Sender to {client_IP} on port {client_port}',
                                                   target=audio_streamer,
                                                   args=(sock, streaming_event, client_IP, client_port,))
-    audio_streamers[client_IP].start()
+    audio_streamers[client_IP].start()  # keep all the streamer threads in one list for better management
 
 
 def audio_streamer(sock, streaming_event, client_IP, client_port):
     global data
     global delay_table
-    end_condition = audio_streamers_terminators[client_IP]
+    end_condition = audio_streamers_terminators[client_IP]  # event to stop streaming if the speaker disconnects
     print(f'Thread for {client_IP}:{client_port} configured on port {sock.getsockname()[1]}', flush=True)
     try:
-        total = timeit.default_timer()
+        idle_time = timeit.default_timer()
         while not end_condition.isSet():
-            streaming_event.wait()
+            streaming_event.wait()  # wait for global data to be ready
             if data is not None:
-                total = timeit.default_timer() - total
-                if client_IP == '192.168.1.17':
-                    gap_table.append(str(total))
-                delay = timeit.default_timer()
+                idle_time = timeit.default_timer() - idle_time  # stop measuring delay between communication
+                if client_IP == '192.168.1.17': # measuring stuff for one specific host, not all of them
+                    gap_table.append(str(idle_time))
+                delay = timeit.default_timer()  # start measuring delay in communication
                 sock.send(data)
                 sock.recv(chunk_size)
-                delay = timeit.default_timer() - delay
-                delay_table.append(str(delay))
-                total = timeit.default_timer()
-            streaming_event.clear()
-            
-            
+                delay = timeit.default_timer() - delay  # stop measuring delay in communication
+                if client_IP == '192.168.1.17': # measuring stuff for one specific host, not all of them
+                    delay_table.append(str(delay))
+                idle_time = timeit.default_timer()  # start measuring delay between communication
+            streaming_event.clear()  # clear to wait for the next batch to come and not send the same one twice
     except Exception as ex:
         print(ex)
-    finally:
+    finally:    # make sure that if anything goes wrong, streaming_event is cleared. Important for management of data to send.
         streaming_event.clear()
 
 
 if __name__ == '__main__':
     print('this is the Raspberry main server')
 
-    speaker = Speaker()
+    speaker = Speaker() # create a thread to forward audio to the sender threads
     speaker_thread = threading.Thread(name=f'Audio receiver', target=speaker.audio_forwarder, daemon=True)
     speaker_thread.start()
 
-    communicator = Communication()
+    communicator = Communication()  # create a thread for managing communication (with messages, not audio stream)
     communicator_thread = threading.Thread(name=f'Communicator thread', target=communicator.launch, daemon=True)
     communicator_thread.start()
 
     while True:
-        command = input()
-        if command == 'speak':
+        command = input()   # using terminal to handle what's going on
+        if command == 'speak' or command == 'start':
             speaker.start_priority_speaking()
         elif command == 'stop':
             speaker.stop_priority_speaking()
-        elif command == 'quit':
-            for (delay, total) in zip(delay_table, gap_table[1:]):
+        elif command == 'quit' or command == 'exit':
+            for (delay, total) in zip(delay_table, gap_table[1:]):  # print all the measured delays and times
                 print(delay, ';', total, flush=True)
-            # print(delay_table, flush=True)
             break
         else:
-            print(f'Command not recognized: {command}\nAvailable commands: speak, stop, quit', flush=True)
+            print(f'Command not recognized: {command}\nAvailable commands: speak/start, stop, quit/exit', flush=True)
     for event in audio_streamers_terminators.values():
-        event.set()
+        event.set() # make sure all the streamers are closed
+# most of the threads are daemon threads, which means they will auto-close when the main thread ends.
