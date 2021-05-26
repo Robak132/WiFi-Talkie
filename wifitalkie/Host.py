@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import sys
+
 import pyaudio
 import socket
 import tkinter
@@ -16,9 +18,9 @@ speaking_event = threading.Event()
 
 
 class Communication:
-    def __init__(self, serv_host=serv_IP, serv_port=serv_comm_port):
-        self.serv_IP = serv_host
-        self.serv_port = serv_port
+    def __init__(self):
+        self.serv_IP = serv_IP
+        self.serv_port = serv_comm_port
         self.sel = selectors.DefaultSelector()
         self.sock = None  # socket for communication with server
         self.server_responded_for_speaking = threading.Event()
@@ -197,6 +199,10 @@ class VOIP_FRAME(tkinter.Frame):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 3:
+        my_IP = sys.argv[1]
+        serv_IP = sys.argv[2]
+
     communication = Communication()  # first of all, create communicator object check if sesrver is responding
     communication_thread = threading.Thread(name=f'Communicator thread', target=communication.launch, daemon=True)
     communication_thread.start()

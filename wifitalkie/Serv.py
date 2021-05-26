@@ -1,5 +1,6 @@
 #!/usr/bin/env python 
 import socket
+import sys
 import timeit
 import wave
 import pyaudio
@@ -248,6 +249,8 @@ def audio_streamer(sock, streaming_event, client_IP, client_port):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 2:
+        serv_IP = sys.argv[1]
     print('this is the Raspberry main server')
 
     speaker = Speaker()  # create a thread to forward audio to the sender threads
