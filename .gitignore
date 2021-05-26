@@ -1,5 +1,7 @@
 **/.idea/
 **/.vscode/
+/overlay/root/Serv.py
+/overlay/root/Host.py
 /buildroot*
 /wifitalkie/*.wav
 /wifitalkie/*_delay.txt
